@@ -1,0 +1,1082 @@
+---
+title: "Regression Analysis"
+subtitle: "Regression Project"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+## Group/Individual Details
+* Amogha Amaresh (s3789160)
+
+
+# Problem Statement
+
+  A new automobile company, which aspires to enter the US market by setting up their manufacturing unit and produce cars, wants to give competition to their US and European counterpart. Therefore, the company wants to understand the factors on which the pricing of cars depends. As a team of data analysts, the objective is to determine the significant features that can predict the price of cars and to figure out how well these variables describe the price of a car which are already present in the market. This analysis will be used by the management to understand how exactly the prices vary with the independent variables.
+
+# Summary
+
+  The main focus of this report is to apply and use all the concepts learnt from Regression Analysis on predicting the price of the cars. The first step in the analysis is by performing data preparation and then followed by data exploration. From the insights gained by data exploration, Simple Linear Regression was performed on horsepower, curbweight and enginesize(size of car). Multiple Linear Regression was performed and significant predictors were selected using step-wise regression technique. Residual analysis and statistical test were carried as part of model validation and model selection. The transformation of the data was performed Box-Cox technique. The Logistic Regression was performed on the created column called Affordability.
+  Overall, based of the model performance metrices such as RMSE, R-squared and accuracy, the models were evaluated and the prediction are made.
+
+# Data and Setup
+
+## Libraries Required for this Project
+The below libraries **readr**, **magrittr**,**dplyr**,**tidyr**, **stringr**, **ggplot2**, **caTools**, **glmnet**, **car**, **TSA**, **caret** and **e1071** are loaded into R using *"library()"* function. We used *"set.seed()"* function to set the beginning number to generate a sequence of random numbers, This makes sure that we get the same result when you run the same process again and again.
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(caTools)
+library(glmnet)
+library(car)
+library(TSA)
+library(caret)
+library(e1071)
+
+set.seed(999)
+```
+
+## Reading the Dataset
+The **"CarPrice_Assignment.csv"** data is read the data into R using *"read.csv()"* function. The data is taken from Kaggle open datasets [click here](https://www.kaggle.com/hellbuoy/car-price-prediction?select=CarPrice_Assignment.csv). The *"dim()"* function is used to check the dimensions of the data. The dataset contains **205 records and 26 variables**. The *"head()"* function is used to display first few rows of the dataset.
+```{r warning=FALSE}
+car_df <-
+read.csv("CarPrice_Assignment.csv", stringsAsFactors = TRUE)
+dim(car_df)
+head(car_df)
+```
+
+## Data Description
+The data is collected based on various market surveys, the consulting firm has gathered a large data set of different types of cars across the America market.
+The dataset comprises of 26 features and 206 observations.  
+`Car_ID`Unique id of each observation (Interger)  
+`Symboling` Its assigned insurance risk rating, A value of +3 indicates that the auto is risky, -3 that it is probably pretty safe. (Categorical)  
+`carName` Name of car (Categorical)  
+`fueltype` Car fuel type i.e gas or diesel (Categorical)  
+`aspiration` Aspiration used in a car (Categorical)  
+`doornumber` Number of doors in a car (Categorical)  
+`carbody` body of car (Categorical)  
+`drivewheel` type of drive wheel (Categorical)  
+`enginelocation` Location of car engine (Categorical)  
+`wheelbase` Weelbase of car (Numeric)  
+`carlength` Length of car (Numeric)  
+`carwidth` Width of car (Numeric)  
+`carheight` height of car (Numeric)  
+`curbweight` The weight of a car without occupants or baggage. (Numeric)  
+`enginetype` Type of engine. (Categorical)  
+`cylindernumber` cylinder placed in the car (Categorical)  
+`enginesize` Size of car (Numeric)  
+`fuelsystem` Fuel system of car (Categorical)  
+`boreratio` Boreratio of car (Numeric)  
+`stroke` Stroke or volume inside the engine (Numeric)  
+`compressionratio` compression ratio of car (Numeric)  
+`horsepower` Horsepower (Numeric)  
+`peakrpm` car peak rpm (Numeric)  
+`citympg` Mileage in city (Numeric)  
+`highwaympg` Mileage on highway (Numeric)  
+`price` Price of car (Numeric)
+
+# Data Preparation
+
+## DataTypes
+We use *"str()"* function to check the structure of the dataset. The datatype of `symboling` variable was converted to categorical because it represents insurance risk rating. The *"class()"* function is used to verify the type of `symboling` variable.
+```{r warning=FALSE}
+str(car_df)
+car_df$symboling <- as.factor(car_df$symboling)
+class(car_df$symboling)
+```
+
+## Summary Statistics
+In R, we use *"summary()"* function to get the summary statistics of the whole dataset.
+```{r warning=FALSE}
+summary(car_df)
+```
+* From the above output, as we can see, there exists **ID-like** variables such as `car_ID` and `CarName`. Also `enginelocation` variable has a single level for 98% of the data.
+* From the values of **Mean** and **Median**, we can assume normality of the variables `wheelbase`, `carlength`, `carwidth` `carheight`, `boreratio`, `stroke`, `peakrpm` and `highwaympg`.
+* The majority of the cars have **gas** as `fueltype`, **std** as `aspiration`, **ohc** as `enginetype` and **four** as `cylindernumber`.
+* Our dependent variable - `price` has a minimum of **5118** and maximum of **45400**. The mean greater than median indicating a skewness towards right.
+
+## Dropping ID-like and Constant columns
+It is best practice to drop three columns:
+* The `car_ID` and `CarName` variables: These are ID-link columns and they are not informative.
+* The `enginelocation`: The two levels of `enginelocation` had 202 entries as **front** and only 3 entries as **rear**. Since majority of the data had a single level, we dropped a `enginelocation` column.
+```{r warning=FALSE}
+car_full_data <- car_df[-c(1, 3, 9)]
+head(car_full_data)
+```
+
+## Creating Unseen Data
+We created test data out of our main dataset to test the model we fit in the later section of the analysis. This helps us to test the prediction accuracy of the model and also helps in model selection. We used *"floor()"* to get the index of the divided data and *"sample()"* function to subset the train data.
+```{r warning=FALSE}
+smp_size <- floor(0.95 * nrow(car_full_data))
+train_ind <- sample(seq_len(nrow(car_full_data)), size = smp_size)
+car_data <- car_full_data[train_ind, ]
+test_data <- car_full_data[-train_ind, ]
+row.names(car_data) <- NULL
+```
+
+# Data Exploration
+
+## Checking Multicollinearity in the Data: Correlation Matrix
+```{r warning=FALSE}
+colnames <- colnames(car_data[,-23][sapply(car_data[,-23], is.numeric)])
+for (colnamesi in colnames) {
+  for (colnamesj in colnames) {
+    if (colnamesi != colnamesj) {
+      if (abs(cor(car_data[, colnamesi], car_data[, colnamesj])) >= 0.8000000) {
+        cat(
+          "Correlation between",
+          colnamesi,
+          "and" ,
+          colnamesj ,
+          "is" ,
+          cor(car_data[, colnamesi], car_data[, colnamesj]),
+          "\n"
+        )
+      }
+    }
+  }
+}
+```
+The above output shows the multicollinearity(correlation greater than 0.8) present amongst the independent variables in the data. The following pairs are highly correlated,  
+`wheelbase` and `carlength`  
+`carlength` and `carwidth`  
+`carlength` and `curbweight`  
+`carwidth` and `curbweight`  
+`curbweight` and `enginesize`  
+`enginesize` and `horsepower`  
+`horsepower` and `citympg`  
+`citympg` and `highwaympg`
+
+# Exploring the Target Variable
+```{r warning=FALSE}
+hist(car_data$price, main = "Historgram of Car Price", xlab = "Car Price")
+```
+From the above output, it is obvious that the data is right skewed with the majority of the car prices falling below 10000 USD.
+
+## Independent Variables VS Dependent Variable
+Let us now plot each numeric independent variables against our `Y` variable `price`. We have functions of **ggplot2** library to generate graphical represenation of the relationship that independent variables share with our dependent variable along with the correlation coefficient using *"cor()"* function.
+```{r warning=FALSE}
+theme_update(plot.title = element_text(hjust = 0.5))
+scatter_plot_fun <- function(xval,xlabel,ylabel,title){
+print(ggplot(car_data, aes(x=car_data[ , xval], y=price))+
+geom_point() +
+xlab(xlabel) +
+ylab(ylabel) +
+ggtitle(title))
+cat('The Correlation between',xlabel, 'vs', ylabel ,'is', cor(car_data[,xval],car_data$price), "\n")
+}
+scatter_plot_fun('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price')
+scatter_plot_fun('carlength','Length of car','Price of car','Car Length vs Price')
+scatter_plot_fun('carwidth','Width of car','Price of car','Car Width vs Price')
+scatter_plot_fun('carheight','Height of car','Price of car','Car Height vs Price')
+scatter_plot_fun('curbweight','The weight of a car without occupants or baggage','Price of car','Curbweight vs Price')
+scatter_plot_fun('enginesize','Size of car','Price of car','Engine Size vs Price')
+scatter_plot_fun('boreratio','Boreratio of car','Price of car','Boreratio vs Price')
+scatter_plot_fun('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price')
+
+scatter_plot_fun('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price')
+scatter_plot_fun('horsepower','Horsepower of car','Price of car','Horsepower vs Price')
+
+scatter_plot_fun('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price')
+scatter_plot_fun('citympg','Mileage in City','Price of car','Mileage in City vs Price')
+scatter_plot_fun('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price')
+```
+* From the above correlation output,
+  + `enginesize` has the highest correlation of 0.8825925 with the `price`.
+  + `carweight` has the second highest correlation of 0.8389173 with the `price`.
+  + `Horsepower` that has third highest correlation of 0.8126118 with the `price`.
+* From the graphs and correlation output we can observe that,
+  + `wheelbase`, `carlength`, `carwidth`, `curbweight` and `boreratio` are moderately correlated with `price` in a positive manner with correlation value of **0.5800439**, **0.687974**, **0.7593505** and **0.5631741** respectively.
+  + `compressionratio`, `stroke` and `peakrpm` have no correlation with `price` with correlation value of **0.07307507** , **0.06081658** and **-0.08991671** respectively.
+  + `citympg` and `highwaympg` are moderately correlated with `price` but in a negative fashion with correlation value of **-0.6972797 ** and **-0.7066926 ** respectively.
+
+
+## Categorical Variables VS Dependent Variable
+
+We will now look at the plots of each numeric independent variables against our `Y` variable `price` along with each independent categorical variable.
+**Note**: We have plotted and analysed all the variables individually, We have shown the outputs of those which are relevant and shows correlation with the `Y` variable.
+``` {r warning=FALSE}
+scatter_plot_fun_fac <- function(xval,xlabel,ylabel,title,fac){
+print(fac)
+print(ggplot(car_data, aes(x=car_data[ , xval], y=price, colour = car_data[ , fac]) )+
+geom_point() +labs(
+colour = fac
+) +
+xlab(xlabel) +
+ylab(ylabel) +
+ggtitle(title)) 
+}
+```
+
+```{r echo=FALSE}
+#Wheelbase vs price
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by symboling','symboling')
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by carbody','carbody')
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by engine type','enginetype')
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by fuel system','fuelsystem')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('wheelbase','Wheelbase of car','Price of car','Wheelbase vs Price by doornumber','doornumber')
+```
+From the above output, we can conclude that majority of the **four-door** cars have higher `wheelbase` when compared with to **two-door** cars.
+
+```{r warning=FALSE}
+#carlength vs price
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by symboling','symboling')
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by carbody','carbody')
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by engine type','enginetype')
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by cylinder number','cylindernumber')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('carlength','Length of car','Price of car','Car Length vs Price by fuel system','fuelsystem')
+```
+From the above plots,  
+* we can observe that **rare-wheel** driven car have the highest `price` and `carlength` follwed by **4-wheel** driven cars and then **front-wheel** driven cars.  
+* Also, cars with **mpfi** and **idi** fuel systems has higher `carlength` and `price` whereas **1bbl** and **2bbl** has the least.
+
+```{r warning=FALSE}
+#carwidth vs price
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by symboling','symboling')
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by carbody','carbody')
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by engine type','enginetype')
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('carwidth','Width of car','Price of car','Car Width vs Price by fuel system','fuelsystem')
+```
+
+```{r warning=FALSE}
+#carheight vs price
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by symboling','symboling')
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by carbody','carbody')
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by engine type','enginetype')
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by fuel system','fuelsystem')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('carheight','Height of car','Price of car','Car Height vs Price by doornumber','doornumber')
+```
+From the above output, we can deduce that the **four-door** cars have higher `carheight` when compared with to **two-door** cars.
+
+```{r warning=FALSE}
+#curbweight vs price
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by symboling','symboling')
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by carbody','carbody')
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by engine type','enginetype')
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('curbweight','The weight of a car without occupants or baggage','Price of car','Curb weight vs Price by fuel system','fuelsystem')
+```
+
+```{r warning=FALSE}
+#enginesize vs price
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by symboling','symboling')
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by carbody','carbody')
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by engine type','enginetype')
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by cylinder number','cylindernumber')
+```
+
+```{r warning=FALSE}
+
+scatter_plot_fun_fac('enginesize','Engine Size','Price of car','Engine Size vs Price by fuel system','fuelsystem')
+```
+From the above output, cars with **mpfi** and **idi** fuel systems has higher `enginesize` and `price` whereas **1bbl** and **2bbl** has the least.
+
+```{r warning=FALSE}
+#boreratio vs price
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by symboling','symboling')
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by carbody','carbody')
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by engine type','enginetype')
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('boreratio','Boreratio of car','Price of car','Boreratio vs Price by fuel system','fuelsystem')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by symboling','symboling')
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by fueltype','aspiration')
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by carbody','carbody')
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by engine type','enginetype')
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by fuel system','fuelsystem')
+scatter_plot_fun_fac('stroke','Stroke or volume inside the engine of car','Price of car','Stroke vs Price by aspiration','fueltype')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by symboling','symboling')
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by carbody','carbody')
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by engine type','enginetype')
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by cylinder number','cylindernumber')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('compressionratio','Compression ratio of car','Price of car','Compression Ratio vs Price by fuel system','fuelsystem')
+```
+From the above plots, we can conclude that,  
+* All the **diesel** cars have higher compression ratio than **gas** engine cars.
+* All the cars with **idi** fuel system have higher compression ratio.
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by symboling','symboling')
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by carbody','carbody')
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by engine type','enginetype')
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by cylinder number','cylindernumber')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('horsepower','Horsepower of car','Price of car','Horsepower vs Price by fuel system','fuelsystem')
+```
+From the above plots, it is clear that
+* The **gas** cars have higher `horsepower`.
+* The **rare-wheel** driven cars have higher `horsepower`.
+* The cars with **mpfi** `fuelsystem` have higher `horsepower`.
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by symboling','symboling')
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by carbody','carbody')
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by engine type','enginetype')
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('peakrpm','Car Peak rpm','Price of car','Car Peak rpm vs Price by fuel system','fuelsystem')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by symboling','symboling')
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by carbody','carbody')
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by engine type','enginetype')
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('citympg','Mileage in City','Price of car','Mileage in City vs Price by fuel system','fuelsystem')
+```
+
+```{r warning=FALSE}
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by symboling','symboling')
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by fueltype','fueltype')
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by aspiration','aspiration')
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by doornumber','doornumber')
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by carbody','carbody')
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by drivewheel','drivewheel')
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by engine type','enginetype')
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by cylinder number','cylindernumber')
+scatter_plot_fun_fac('highwaympg','Mileage on Highway','Price of car','Mileage on Highway vs Price by fuel system','fuelsystem')
+```
+From all the above plots, the variables that seem to be amongst the signficant predictors are  
+* `enginesize`  
+* `carweight`  
+* `Horsepower`  
+* `fueltype`  
+* `drivewheel`  
+* `enginetype`  
+* `fuelsystem`
+
+# Models
+* As a part of this regression analysis, we will perform **Simple Linear Regression**, **Multiple Linear Regression** and **Logistics Regression**. A thorough residual analysis will be carried out in order to analyse the model adequacy. We also perform **Step-Wise Regression** to obtain the significant predictors 
+* In **Simple Linear Regression**, `price` will be our response variable and we regress `price` with `horsepower`, `curbweight` and `enginesize` since these are highly correlated with `price`.
+* In **Multiple Linear Regression**, `price` will be our response variable, we perform step-wise regression with multiple regressors
+* In case of **Logistic Regression**, we create a new column called `Affordability` and holds a value of **0** if price is less than 12000 and if not **1**. This two levels are created based on the histogram `price` to avoid class imbalance.
+* The major functions used in the data modelling are *"lm()"* to fit the linear model, *"summary()"* to have a look at the model, *"anova()"* for analysis of variance and *"plot()"* to perform residual analysis.
+
+## Simple Linear Regression
+Simple linear regression is a kind of regression which establishes relationship between one dependent and one independent variable using a straight line. Since our dependent variable `price` is highly correlated with `enginesize`, `carweight` and `Horsepower`, we will proceed our analysis by fitting these three variables individually into SLR model.
+
+### Fitting the model
+
+#### Horsepower vs Price of car
+```{r warning=FALSE}
+slr_horsepower <- (lm(price ~ horsepower , car_data))
+slr_horsepower
+summary(slr_horsepower)
+```
+* From the above output, the value of Multiple R-squared is 0.66 which implies that the model is capable of explaining 66% of the variability in variable `price`. The overall model is significant with the **p-value less than 2.2e-16** which is less than significance level.  
+* The regressor `horsepower` is the only significant variable since the **p-value** is less than **0.05**.
+* The price of a car will increase by 165.367 with a unit increase in horsepower.
+* The model equation is
+$$ price = -3879.768 + 165.367 * horsepower + ε $$
+
+#### Curbweight vs Price of Car
+```{r warning=FALSE}
+slr_curbweight <- (lm(price ~ curbweight , car_data))
+slr_curbweight
+summary(slr_curbweight)
+```
+* From the above output, the value of Multiple R-squared is 0.7006 which implies that the model is capable of explaining 70.06% of the variability in variable `price`. The overall model is significant with the **p-value less than 2.2e-16** which is less than significance level.  
+* The regressor `curbweight` is the only significant variable since the **p-value** is less than **0.05**.
+* The price of a car will increase by 12.94 with a unit increase in curbweight
+* The model equation is
+$$ price = -1971 + 12.94 * curbweight + ε $$
+
+#### Size of Car vs Price of Car
+```{r warning=FALSE}
+slr_enginesize <- (lm(price ~ enginesize , car_data))
+slr_enginesize 
+summary(slr_enginesize )
+```
+* From the above output, the value of Multiple R-squared is 0.769 which implies that the model is capable of explaining 76.9% of the variability in variable `price`. The overall model is significant with the **p-value less than 2.2e-16** which is less than significance level.  
+* The regressor `enginesize` is the only significant variable since the **p-value** is less than **0.05**.
+* The price of a car will increase by 169.089 with a unit increase in enginesize
+* The model equation is
+$$ price = -8117.664 + 169.089 * enginesize + ε$$
+
+Since the adjusted R-squared value of `enginesize` vs `price` model is the highest amongst all the SLR models, we will proceed to check residual analysis for the same.
+
+### Residual Analysis of Engine Size
+
+```{r warning=FALSE}
+par(mfrow=c(2,2))
+plot(slr_enginesize)
+```
+#### 1.Residual vs Fitted (Linearity):
+The linearity assumption is not violated as residuals are centered around zero. Thus indicating there is no non-linear trends in the Residual vs. fitted plot. 
+
+#### 2.Normal Q-Q (Normality of residuals):
+Several points lie on the reference line apart from points 57, 91, 130 which are quite a distance from reference line (outliers). Due to the presence of outliers the normality assumption is violated.
+
+**Test for Normally Distributed Errors**  
+**Null Hypothesis** $H_0$ : Residuals are normally distributed  
+**Alternate hypothesis** $H_1$ : Residuals are not normally distributed 
+```{r warning=FALSE}
+shapiro.test(slr_enginesize$residuals)
+```
+As p value is 7.559e-06 which is less than 0.05 we reject Null Hypothesis ($H_0$) and normality of the residuals assumption is violated. 
+The QQ plot and the shapiro wilk test showed that the normality assumption is violated. 
+
+#### 3.Scale –Location (Homoscedasticity): 
+The plot shows that there is an increasing pattern in the variance. Thus the assumption of equal variance is violated. 
+
+**Test to evaluate homoscedasticity**  
+**Null Hypothesis** $H_0$ : Constant Variance  
+**Alternate hypothesis** $H_1$ : Non Constant Variance 
+```{r warning=FALSE}
+# Evaluate homoscedasticity
+# non-constant error variance test
+library(car)
+ncvTest(slr_enginesize)
+```
+As p value is 7.6495e-12 which is less than 0.05. Therefore we have sufficient evidence to reject Null Hypothesis ($H_0$). Thus constant error variance assumption is violated.
+
+#### 4.Residual vs Leverage:
+The 130th observation falls outside the red dashed line (Cook’s distance) and thus there is presence of influential cases.
+
+#### 5.Independence: 
+**ACF of the residuals plot**
+```{r warning=FALSE}
+acf(slr_enginesize$residuals)
+```
+From the ACF plot it can be seen that there are no significant lags. All the bars are well within the blue lines which shows that there is no autocorrelation in the residuals.
+
+**Durbin Watson Test**  
+**Null Hypotheis** $H_0$: Errors are not autocorrelated  
+**Alyernate Hypotheis** $H_1$: Errors are autocorrelated
+```{r warning=FALSE}
+durbinWatsonTest(slr_enginesize)
+```
+As p value is 0.818, which is greater than 0.05 and D-W Statistic is 1.96407. Thus, indicating niether positive nor negative autocorrelation. Hence there is no sufficient evidence to reject Null Hypothesiss. Thus independence assumption is not violated and there is no autocorrelation in the residuals. 
+
+### Removing Outliers and fitting the model
+
+**OUTLIERS**: Based our research on the outliers, we found that the outliers present in the `price` are not due to the data entry. We found that these values are genuine ans one-off cases. Also including these values into regression model will not affect the direction of the line of best fit.
+
+**INFLUENTIAL POINTS**: From Residual vs Leverage Plot, the 130th observation is influential. In order to check if the influential point affects the model, we will remove the influential point and fit the model again.
+
+```{r warning=FALSE}
+car_data_no_influence <- car_data[-c(130), ]
+slr_enginesize_no_influence <- (lm(price ~ enginesize , car_data_no_influence))
+slr_enginesize_no_influence
+summary(slr_enginesize_no_influence )
+```
+* From the above output, the value of adjusted R-squared is 0.7693 which implies that the model is capable of explaining 76.93% of the variability in variable `price`. The overall model is significant with the **p-value less than 2.2e-16** which is less than significance level.  
+* The regressor `enginesize` is the only significant variable since the **p-value** is less than **0.05**.
+* The price of a car will increase by 176.334 with a unit increase in enginesize
+* The model equation is
+$$ price = -8970.275 + 176.334 * enginesize +  ε $$
+
+### Residual Analysis of the Model without Influential Points
+```{r warning=FALSE}
+par(mfrow=c(2,2))
+plot(slr_enginesize_no_influence)
+```
+#### 1.Residual vs Fitted (Linearity):
+The linearity assumption is not violated as residuals are centered around zero. Thus indicating there is no non-linear trends in the Residual vs. fitted plot. 
+
+#### 2.Normal Q-Q (Normality of residuals):
+Several points lie on the reference line apart from points 57, 91, 130 which are quite a distance from reference line (outliers). Due to the presence of outliers the normality assumption is violated.
+
+**Test for Normally Distributed Errors**  
+**Null Hypothesis** $H_0$ : Residuals are normally distributed  
+**Alternate hypothesis** $H_1$ : Residuals are not normally distributed 
+```{r warning=FALSE}
+shapiro.test(slr_enginesize$residuals)
+```
+As p value is 7.559e-06 which is less than 0.05 we reject Null Hypothesis ($H_0$) and normality of the residuals assumption is violated. 
+The QQ plot and the shapiro wilk test showed that the normality assumption is violated. 
+
+#### 3.Scale –Location (Homoscedasticity): 
+The plot shows that there is an increasing pattern in the variance. Thus the assumption of equal variance is violated. 
+
+**Test to evaluate homoscedasticity**  
+**Null Hypothesis** $H_0$ : Constant Variance  
+**Alternate hypothesis** $H_1$ : Non Constant Variance 
+```{r warning=FALSE}
+# Evaluate homoscedasticity
+# non-constant error variance test
+library(car)
+ncvTest(slr_enginesize)
+```
+As p value is 7.6495e-12 which is less than 0.05. Therefore we have sufficient evidence to reject Null Hypothesis ($H_0$). Thus constant error variance assumption is violated.
+
+#### 4.Residual vs Leverage:
+There are no influential points
+
+#### 5.Independence: 
+**ACF of the residuals plot**
+```{r warning=FALSE}
+acf(slr_enginesize$residuals)
+```
+From the ACF plot it can be seen that there are no significant lags. All the bars are well within the blue lines which shows that there is no autocorrelation in the residuals.
+
+**Durbin Watson Test**  
+**Null Hypotheis** $H_0$: Errors are not autocorrelated  
+**Alyernate Hypotheis** $H_1$: Errors are autocorrelated
+```{r warning=FALSE}
+durbinWatsonTest(slr_enginesize)
+```
+As p value is 0.78, which is greater than 0.05 and D-W Statistic is 1.96407. Thus, indicating niether positive nor negative autocorrelation. Hence there is no sufficient evidence to reject Null Hypothesiss. Thus independence assumption is not violated and there is no autocorrelation in the residuals. 
+
+#### Plotting Line of Best Fit for the Models With and without Influential Points
+```{r fig.height=5}
+par(mfrow = c(2, 1))
+plot(
+  car_data$enginesize,
+  car_data$price,
+  type = "p",
+  xlab = "Engine Size",
+  ylab = "Price of the Car"
+  ,
+  main = "Regression Line with Influence Point"
+)
+abline(slr_enginesize)
+plot(
+  car_data_no_influence$enginesize,
+  car_data_no_influence$price,
+  type = "p",
+  xlab = "Engine Size",
+  ylab = "Price of the Car"
+  ,
+  main = "Regression Line without Influence Point"
+)
+abline(slr_enginesize_no_influence)
+```
+From the visual inspection of the above plots, we can see either by including or excluding the influential points did not make any huge impact of the regression line. Therefore, we will consider the model with influential points. We will now deal with the normality and Non Constant Variance present in the residuals.
+
+### Dealing with Normality and Non Constant Variance
+
+#### Transformation
+We use boxcox transformation in order to convert our data into a normal distribution. Here in R, the dependent variable `price` is transformed using *"boxcox()"* function.
+```{r warning=FALSE}
+bc <- MASS::boxcox(car_data$price ~ car_data$enginesize)
+trans <- bc$x[which.max(bc$y)]
+cat("Optimal lambda value is ", round(trans,1))
+```
+
+```{r warning=FALSE}
+slr_enginesize_transform = lm((price ^ (0.1)) ~ enginesize, data = car_data)
+summary(slr_enginesize_transform)
+```
+* From the above output, the value of adjusted R-squared is 0.7042 which implies that the model is capable of explaining 70.42% of the variability in variable `price`. The overall model is significant with the **p-value less than 2.2e-16** which is less than significance level.  
+* The regressor `enginesize` is the only significant variable since the **p-value** is less than **0.05**.
+* The price of a car will increase by 0.0026341 with a unit increase in enginesize
+* The model equation is
+$$ price = 2.2174111 + 0.0026341 * enginesize + ε $$
+
+```{r warning=FALSE}
+par(mfrow = c(2, 2))
+plot(slr_enginesize_transform)
+```
+
+```{r warning=FALSE}
+shapiro.test(slr_enginesize_transform$residuals)
+ncvTest(slr_enginesize_transform)
+acf(slr_enginesize_transform$residuals)
+durbinWatsonTest(slr_enginesize_transform)
+```
+
+After performing the resdiual analysis and relevant statistical tests, None of the residual tests and checks were passed. Therefore we conclude that the model that was fit with un-transformed data is the best Simple Linear Regression model.
+
+## Mutiple Linear Regression
+
+The dependent variable `price` is now fitted with intercept and with all the independent variables in the dataset. A step wise regression is performed for feature selection process. In Step-Wise Regression, a independent variable is added or substracted from the model based on the AIC value.
+```{r warning=FALSE}
+car_null = lm(price ~ 1, data = car_data)
+car_full = lm(price ~ ., data = car_data)
+car_step_reg <-
+  step(
+    car_null,
+    scope = list(upper = car_full),
+    data = car_data,
+    direction = "both"
+  )
+```
+The list of features that are selected after the step wise regression process are - `enginesize`, `cylindernumber`, `enginetype`, `horsepower`, `fuelsystem`, `stroke`, `peakrpm`, `curbweight`, `carbody`, `carwidth`, `symboling`, `carlength`, `carheight` and `highwaympg`.
+
+```{r warning=FALSE}
+summary(car_step_reg )
+```
+* The adjusted R-squared value is 0.9276 which implies that the model explains 92.76% of variation in the `price` variable. The overall model is significant as the **p-value is < 2.2e-16** which is less than **0.05** for **F-statistic = 69.65**.  
+* The model coefficients - `carlength`, `carheight` and `highwaympg` are not significant as the the p-value is greater than the significance level = 0.05.  
+* It can be seen that `enginetype` - **rotor** has coefficient - **NA**. The **NA** coefficient indicates that the variable `enginetyperotor` is linearly related to the other variables[1][2]. To figure out the perfect linear relationship, lets use the *"alias()"* function.
+
+```{r warning=FALSE}
+alias(car_step_reg)
+```
+From the output it can be seen that `enginetyperotor` vs `cylindernumbertwo` have a value **1** indicating exact positive collinearity. This means that including either of `enginetype` or `cylindernumber` will provide the same information to the model. Hence, either one of them is sufficient to explain the varaiation in the `price`[1][2].
+
+```{r figurename4, echo=FALSE, out.width = '90%'}
+knitr::include_graphics("Perfect Collinearity.jpeg")
+```
+From the above image, it can be seen that when the `enginetype` is **rotor** , the `cylindernumber` is **two**. Hence, the result for **NA** coefficient. Thus the solution is to remove one of the variables and fit the model.
+
+### Multiple Linear Regression without enginetype
+
+The dependent variable `price` is now fitted with intercept and independent variables (not including `enginetype`) in the dataset. A step wise regression is performed for feature selection process.
+```{r warning=FALSE}
+car_filter_2 <- car_data[-c(12)]
+car_null_2 = lm(price ~ 1, data = car_filter_2)
+car_full_2 = lm(price ~ ., data = car_filter_2)
+car_step_reg_2 <-
+  step(
+    car_null_2,
+    scope = list(upper = car_full_2),
+    data = car_filter_2,
+    direction = "both"
+  )
+```
+The list of features that are selected after the step wise regression process is - `enginesize`, `cylindernumber`, `horsepower`, `stroke`, `compressionratio`, `wheelbase`, `peakrpm`, `carbody`, `aspiration`, `carheight`, `citympg` and `highwaympg`.
+
+```{r warning=FALSE}
+summary(car_step_reg_2)
+```
+* The adjusted R-squared value is 0.8879 which tells that the model explains 88.79% of variation in the `price`. The overall model is significant as the **p-value is < 2.2e-16**, is less than 0.05 for **F-statistic = 77.42**.  
+* The model coefficients - `horsepower`, `compressionratio`, `carheight` and `citympg` are not significant as the the p-value is greater than the significance level = 0.05.
+
+### Multiple Linear Regression with Significant predictors
+```{r warning=FALSE}
+car_significant = lm(
+  price ~ enginesize + cylindernumber + stroke +
+    peakrpm + wheelbase + carbody + aspiration +
+    highwaympg ,
+  data = car_filter_2
+)
+summary(car_significant)
+```
+* The adjusted R-squared value is 0.8823 which tells that the model explains 88.23% of varaition in the `price`. The overall model is significant as the **p-value is < 2.2e-16**, is less than 0.05 for **F-statistic = 91.43**.  
+* All the model coefficients are significant as the p-value is less than 0.05.
+
+### Model Comparison
+```{r warning=FALSE}
+anova(car_significant , car_step_reg_2)
+```
+* On comparing the model with only significant variables and the model with all the variables, resulted in Residual sum of squares of **Model 1 is 1382302111** and that of **Model 2 is 1287018390**. The included variables has accounted for **RSS = 95283720**. This reduction in RSS is significant as p-value is less than 0.05 and we reject $H_0$. Thus the variables `horsepower`, `compressionratio`, `carheight` and `citympg` are required.
+
+```{r warning=FALSE}
+coef(car_step_reg_2)
+```
+
+The fitted equation line is  
+price = -39473.128893 + 144.920550 * enginesize + 912.092491 (cylindernumber = five) -3286.563271 (cylindernumber = four) - 815.964600 (cylindernumber = six) + 218.430640 (cylindernumber = three) -11481.836967 (cylindernumber = twelve) + 5567.138606 (cylindernumber = two) -3748.336549 * stroke + 23.019842 * horsepower + 128.066579 * compressionratio + 2.710502 * peakrpm + 196.576136 * wheelbase -4006.234206 (carbody = hardtop) -5518.741423 (carbody = hatchback) -4950.127524 (carbody = sedan) -6028.135624 (carbody = wagon) + 2094.100711(aspiration = turbo) + 333.956024 * highwaympg + 238.311901 * carheight - 243.799815 * citympg + ε
+
+### Residual Analysis
+```{r warning=FALSE}
+par(mfrow=c(2,2))
+plot(car_step_reg_2)
+```
+#### 1.Residual vs Fitted (Linearity):
+The linearity assumption is not violated as residuals are centered around zero. Thus indicating there is no non-linear trends in the Residual vs. fitted plot. 
+
+#### 2.Normal Q-Q (Normality of residuals):
+Several points lie on the reference line apart from points 48, 57, 109, 117 and 153  which are quite a distance from the reference line. Due to the presence of outliers the normality assumption is violated.
+
+**Test for Normally Distributed Errors**  
+**Null Hypothesis** $H_0$ : Residuals are normally distributed  
+**Alternate hypothesis** $H_1$ : Residuals are not normally distributed
+```{r warning=FALSE}
+shapiro.test(car_step_reg_2$residuals)
+```
+As **p value = 2.786e-07** which is less than 0.05, we reject Null Hypothesis ($H_0$) and normality of the residuals assumption is violated. The QQ plot and the shapiro wilk test showed that the normality assumption is violated.
+
+#### 3.Scale –Location (Homoscedasticity): 
+The plot shows that there is an increasing pattern in the variance. Thus the assumption of equal variance is violated.
+
+**Test to evaluate homoscedasticity**  
+**Null Hypothesis** $H_0$ : Constant Variance  
+**Alternate hypothesis** $H_1$ : Non Constant Variance
+```{r warning=FALSE}
+# Evaluate homoscedasticity
+# non-constant error variance test
+library(car)
+ncvTest(car_step_reg_2)
+```
+The **p-value is < 2.22e-16** which is less than 0.05. Therefore, we have sufficient evidence to reject Null Hypothesis ($H_0$). Thus constant error variance assumption is violated.
+
+#### 4.Residual vs Leverage:
+None of the points fall outside the red dashed line (Cook’s distance) and thus there are no influential cases.
+
+#### 5.Independence:
+**ACF of the residuals plot**
+```{r warning=FALSE}
+library(TSA)
+acf(car_step_reg_2$residuals)
+```
+From the ACF plot, it can be seen that there is a significant lag at 12, apart from that no other lags are significant. Lets check the Durbin Watson Test to confirm on the autocorrelation in the residuals.
+
+**Durbin Watson Test**  
+**Null Hypothesis** $H_0$: Errors are not autocorrelated  
+**Alternated Hypothesis** $H_1$: Errors are autocorrelated
+```{r warning=FALSE}
+durbinWatsonTest(car_step_reg_2)
+```
+As **p value = 0.524** which is greater than 0.05 and **D-W Statistic = 1.917299. We can conclude that there is neither positive nor negative autocorrelation. Hence there is no sufficient evidence to reject Null Hypothesis. Thus independence assumption is not violated and there is no autocorrelation in the residuals.
+
+### Transformation of the Data
+
+From the residual analysis, it is figured out that normality and constant variance assumptions are violated. So lets perform the Box-Cox transformation on the dependent variable by finding the optimal value of lambda.
+```{r warning=FALSE}
+car_filter_3 <- car_filter_2 %>%
+  select(
+    enginesize ,
+    cylindernumber ,
+    stroke ,
+    horsepower ,
+    compressionratio ,
+    peakrpm ,
+    wheelbase ,
+    carbody ,
+    aspiration ,
+    highwaympg ,
+    carheight ,
+    citympg,
+    price
+  )
+```
+
+```{r warning=FALSE}
+par(mfrow = c(1, 1))
+bc <- MASS::boxcox(car_filter_3$price ~ ., data = car_filter_3)
+trans <- bc$x[which.max(bc$y)]
+cat("Optimal lambda value is ", round(trans, 1))
+```
+
+```{r warning=FALSE}
+mlr_car_transform = lm((car_filter_3$price) ^ (-0.1) ~ ., data = car_filter_3)
+summary(mlr_car_transform)
+```
+* The adjusted R-squared value is 0.8954 which tells that the model explains 89.54% of variation in the `price`.
+* The overall model is significant as the **p-value is < 2.2e-16** which is less than 0.05 for **F-statistic = 83.62**. * The model coefficients - `aspiration`, `highwaympg` and `carheight` are not significant as the p-value is greater than the significance level = 0.05.
+
+```{r warning=FALSE}
+coef(mlr_car_transform)
+```
+The fitted equation line is  
+price = 4.960870e-011 -1.724490e-04 * enginesize -1.138688e-02 (cylindernumber = five) 4.165718e-03 (cylindernumber = four) -6.796032e-03 (cylindernumber = six) -1.289684e-02 (cylindernumber = three) + 2.285310e-02(cylindernumber = twelve) -1.648228e-02 (cylindernumber = two) + 5.736295e-03* stroke -1.596000e-04 * horsepower -8.116228e-04 * compressionratio -2.854184e-06 * peakrpm -7.156884e-04 * wheelbase + 1.400100e-02 (carbody = hardtop) + 1.590342e-02 (carbody = hatchback) + 1.345685e-02(carbody = sedan) +1.546157e-02 (carbody = wagon) -2.297096e-03(aspiration = turbo) -6.531383e-04 * highwaympg -1.607507e-04 * carheight + 1.187673e-03 * citympg + ε
+
+
+```{r warning=FALSE}
+par(mfrow = c(2, 2))
+plot(mlr_car_transform)
+```
+#### 1.Residual vs Fitted (Linearity):
+The linearity assumption is not violated as residuals are centered around zero. Thus indicating there is no non-linear trends in the Residual vs. fitted plot. 
+
+#### 2.Normal Q-Q (Normality of residuals):
+Most points lie on the reference line apart from points 79, 109 and 117 which are at a distance from the reference line. Due to the presence of outliers the normality assumption is violated.
+
+**Test for Normally Distributed Errors**  
+**Null Hypothesis** $H_0$ : Residuals are normally distributed  
+**Alternate hypothesis** $H_1$ : Residuals are not normally distributed 
+```{r warning=FALSE}
+shapiro.test(mlr_car_transform$residuals)
+```
+As **p-value is 0.05029** which is greater than 0.05 we fail to reject Null Hypothesis ($H_0$) and normality of the residuals assumption is not violated. The QQ plot and the shapiro wilk test showed that the normality assumption is not violated. 
+
+#### 3.Scale – Location (Homoscedasticity): 
+The plot looks okay as there is no increasing or decreasing pattern. Thus the assumption of equal variance is not violated.
+
+**Test to evaluate homoscedasticity**  
+**Null Hypothesis** $H_0$ : Constant Variance  
+**Alternate hypothesis** $H_1$ : Non Constant Variance 
+```{r warning=FALSE}
+# Evaluate homoscedasticity
+# non-constant error variance test
+library(car)
+ncvTest(mlr_car_transform)
+```
+The **p-value is 0.46905** which is greater than 0.05. herefore, we have no sufficient evidence to reject Null Hypothesis ($H_0$). Thus constant error variance assumption is not violated.
+
+#### 4.Residual vs Leverage:
+None of the points fall outside the red dashed line (Cook’s distance) and thus no influential cases.
+
+#### 5.Independence: 
+**ACF of the residuals plot**
+```{r warning=FALSE}
+library(TSA)
+acf(mlr_car_transform$residuals)
+```
+From the ACF plot it can be seen that no lags are significant. Lets check the Durbin Watson Test to confirm on the autocorrelation in the residuals. 
+
+**Durbin Watson Test**  
+**Null Hypothesis** $H_0$: Errors are not autocorrelated  
+**Alternate Hypothesis** $H_1$: Errors are  autocorrelated
+```{r warning=FALSE}
+durbinWatsonTest(mlr_car_transform)
+```
+As **p-value is 0.126** is greater than 0.05 and **D-W Statistic = 1.782069**. Hence there is no sufficient evidence to reject Null Hypothesis. Thus independence assumption is not violated and there is no autocorrelation in the residuals. 
+
+
+## Logistic Regression
+We now perform Logistic Regression. From the variable `price`, we derive a new column called `Affordability` with two levels. If the `price` is greater than 12000 USD then it is considered as not affordable and is given a of value **0** else it is given the value 1 indicating that the car is affordable.
+The varaible `price` is then removed from the list of independent variables.
+
+```{r warning=FALSE}
+car_data$Affordability <- ifelse(car_data$price >12000, 0, 1)
+car_data_no_price <- car_data[,-c(23)]
+
+logit_model <- glm(Affordability ~ .,
+                   family = binomial, car_data_no_price)
+summary.glm(logit_model)
+```
+On fitting the logistic regression model it can be interpreted that,
+* All the predictors are significant as all the coefficients have a p-value less than 0.05. But it can be seen that `cylindernumber` - **two** and `fuelsystem` - **idi** have coefficients - **NA**. The **NA** coefficient indicates that the variables `cylindernumbertwo` and `fuelsystemidi` are linearly related to the other variables[1][2]. To figure out the perfect linear relationship, we use *"alias()"* function.
+
+```{r warning=FALSE}
+alias(logit_model)
+```
+From the aove output it can be seen that,
+* `fuelsystemidi` vs `fueltypegas` have a value **-1** indicating a perfect negative collinearity. This means that including either of `fuelsystem` or `fueltype` will provide the same information to the model. Hence either one of them is sufficient to explain the variation in the `price`[1][2]. 
+The `cylindernumbertwo` vs `enginetyperotor` have a value 1 indicating exact positive collinearity. This means that including either of cylinder number or engine type will provide the same information to the model. Hence either one of them is sufficient to predict `Affordability`.
+
+```{r warning=FALSE}
+car_data_logit_filter <- car_data_no_price[,-c(13, 15)]
+logit_model_filter <- glm(Affordability ~ .,
+                          family = binomial, car_data_logit_filter)
+summary.glm(logit_model_filter)
+
+```
+On fitting the logistic regression model it can be interpreted that there are no insignificant predictors as all the coefficients have a p-value less than 0.05 and model is significant.
+
+#### Model Adequacy  
+**Null Hypothesis:** $H_0$: The model fits the data well  
+**Alternate Hypothesis:**$H_1$: The model does not fit the data well 
+```{r warning=FALSE}
+cat('The Residual Deviance of the model is ' ,
+    deviance(logit_model_filter),
+    "\n")
+pchisq(logit_model_filter$deviance,
+       df = logit_model_filter$df.residual,
+       lower.tail = FALSE)
+```
+The chi-square test statistic of 360.4365 with 160 degree of freedom gives a p-value of 1.721801e-17. This indicates that we reject $H_0$ and conclude that fitted logistic model is not adequate.
+
+# Prediction
+We will now test the model using the unseen data `test_data`. In R, we use *"predict()"* function to obtain predictions from the model.
+
+## Prediction Using Simple Linear Regression
+```{r warning=FALSE}
+test_data_slr <- (test_data %>% select(enginesize))
+test_data_slr <- test_data_slr %>% arrange(enginesize)
+new <- data.frame(enginesize = test_data_slr$enginesize)
+conf_interval_slr_t <- predict(
+  slr_enginesize_transform,
+  newdata = new,
+  interval = "confidence",
+  level = 0.95
+)
+
+conf_interval_slr <- data.frame(conf_interval_slr_t ^ 10)
+conf_interval_slr <- conf_interval_slr %>%
+  rename(predicted = fit)
+
+conf_interval_slr$original <- test_data$price
+conf_interval_slr$residual <-
+  conf_interval_slr$original - conf_interval_slr$predicted
+conf_interval_slr
+```
+From the above putput, we can observe the predicted values from the Simple Linear Regresssion Model. We also have 95% confidence interval of the predicted values
+
+```{r}
+MSE <- sum(conf_interval_slr$residual^2)/11
+RMSE <- sqrt(MSE)
+MSE
+RMSE
+```
+By fitting a Simple Linear Regression with `enginesize` as regressor, we obtain a **MSE** of **13659310** and **RMSE** of **3695.85**. We will now plot the test data points along with line of best fit with condifence and prediction intervals.
+
+```{r warning=FALSE}
+test_data_slr <- (test_data %>% select(enginesize))
+test_data_slr <- test_data_slr %>% arrange(enginesize)
+new <- data.frame(enginesize = test_data_slr$enginesize)
+pred_interval_slr_t <- predict(
+  slr_enginesize_transform,
+  newdata = new,
+  interval = "prediction",
+  level = 0.95
+)
+
+plot(
+  test_data$enginesize,
+  test_data$price ^ 0.1,
+  type = "p",
+  xlab = "Engine Size ",
+  ylab = "Price of Car"
+  ,
+  main = "Confidence and Prediction Intervals"
+)
+abline(slr_enginesize_transform)
+lines(test_data_slr[, 1],
+      conf_interval_slr_t[, 2],
+      col = "blue",
+      lty = 2)
+lines(test_data_slr[, 1],
+      conf_interval_slr_t[, 3],
+      col = "blue",
+      lty = 2)
+lines(test_data_slr[, 1],
+      pred_interval_slr_t[, 2],
+      col = "orange",
+      lty = 2)
+lines(test_data_slr[, 1],
+      pred_interval_slr_t[, 3],
+      col = "orange",
+      lty = 2)
+```
+From the above output, The blue line represents the 95% confidence intervals and orange line indicates 95% prediction intervals for the transformed `price`.
+
+## Prediction using Multiple Linear Regression
+```{r warning=FALSE}
+test_data_mlr <- test_data %>%
+  select(
+    enginesize ,
+    cylindernumber ,
+    stroke ,
+    horsepower ,
+    compressionratio ,
+    peakrpm ,
+    wheelbase ,
+    carbody ,
+    aspiration ,
+    highwaympg ,
+    carheight ,
+    citympg
+  )
+
+conf_interval_mlr <- predict(
+  mlr_car_transform,
+  newdata = test_data_mlr,
+  interval = "confidence",
+  level = 0.95
+)
+
+conf_interval_mlr <- data.frame(conf_interval_mlr ^ -10)
+conf_interval_mlr <- conf_interval_mlr %>%
+  rename(predicted = fit ,
+         lwr = upr,
+         upr = lwr)
+conf_interval_mlr$original <- test_data$price
+conf_interval_mlr$residual <-
+  conf_interval_mlr$original - conf_interval_mlr$predicted
+conf_interval_mlr
+```
+From the above putput, we can observe the predicted values from the Multiple Linear Regresssion Model. We also have 95% confidence interval of the predicted values
+
+```{r}
+MSE <- sum(conf_interval_mlr$residual ^ 2) / 11
+RMSE <- sqrt(MSE)
+MSE
+RMSE
+```
+By fitting a Multiple Linear Regression as regressor, we obtain a **MSE** of **5431331** and **RMSE** of **2330.522**.
+
+## Predicting using Logistic Regression
+```{r warning=FALSE}
+test_data_logit <- test_data
+test_data_logit$Affordability <-
+  ifelse(test_data$price > 12000, 0, 1)
+
+test_data_logit_pred <- test_data_logit
+test_data_logit_pred <- test_data_logit[,-c(13, 15, 23, 24)]
+
+probabilities <-
+  logit_model_filter %>% predict(test_data_logit_pred, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+
+df <- data.frame ('Original_Value' = test_data_logit$Affordability,
+                  'Prediction' = predicted.classes)
+df
+```
+From the above output, we can see the original values and prediction values, The Logistic Regression model has accounted for 9 correct predictions out of 11. Let us now look at the confusion matrix and model accuracy[3].
+
+### Model Accuracy of Logistic Regression
+```{r}
+logit_conf_mat <-
+  confusionMatrix(data = as.factor(df$Original_Value),
+                  reference = as.factor(df$Prediction))
+logit_conf_mat
+```
+From the above output, we can conclude that the model accuracy is 81.82% on the unseen data. However, chi-square test showed that the model is not adequate.
+
+# Conclusion
+
+  In the case of predicting `price`, The Simple Linear Regression model using `enginesize` as regressor gave us Multiple R squared value of 0.7705 When the same model was used to predict `price` of the test data, it gave us RMSE of 3695.85 Whereas in the case of Multiple Linear Regression, the model gave us the adjusted R squared value of 0.8954 and RMSE on the test data is 2330.522. Therefore, by considering the adjusted R squared value and RMSE value, Multiple Linear Regression has outperformed Simple Linear Regression. However, due to the presence of multipcollinearity in the data, an appropriate regression model would be Ridge Regression. The Logistic Regression model was fit to predict the `Affordability` of the car and it was observed that the model gave an accuracy of 81.82% on the test data. However, based on the Chi Square test, the model was found tobe inadequate. 
+
+# References 
+
+[1] Linear Regression in R : Coefficients having NA in summary(model). (2018, March 19). Data Science, Analytics and Big Data Discussions. [https://discuss.analyticsvidhya.com/t/linear-regression-in-r-coefficients-having-na-in-summary-model/64624Why] would R return NA as a lm() coefficient? (2012, April 3). 
+
+[2] Cross Validated [https://stats.stackexchange.com/questions/25804/why-would-r-return-na-as-a-lm-coefficient#:%7E:text=NA%20as%20a%20coefficient%20in,related%20to%20the%20other%20variables.&text=If%20this%20is%20the]
+
+[3] Logistic Regression Essentials in R. (2018, March 11). Articles - STHDA. [http://www.sthda.com/english/articles/36-classification-methods-essentials/151-logistic-regression-essentials-in-r/#making-predictionshttp://www.sthda.com/english/articles/36-classification-methods-essentials/151-logistic-regression-essentials-in-r/#making-predictions]
+
